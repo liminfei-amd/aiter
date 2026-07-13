@@ -447,6 +447,7 @@ def compile_flydsl_moe_stage1(
     xcd_swizzle: int = 0,
     k_wave: int = 1,
     swiglu_limit: float = 0.0,
+    zero_stage2_output: bool = False,
 ):
     """Compile stage1 kernel (cached via underlying lru_cache)."""
     if b_dtype in ("fp4", "fp8"):
@@ -524,6 +525,7 @@ def compile_flydsl_moe_stage1(
             gate_mode=gate_mode,
             swiglu_limit=swiglu_limit,
             act=act,
+            zero_stage2_output=zero_stage2_output,
         )
     else:
         raise ValueError(
@@ -660,6 +662,7 @@ def runtime_swiglu_limit(swiglu_limit: Optional[float], act: str) -> float:
 
 def _s1_args_fp4(
     out,
+    stage2_out,
     a,
     w,
     a_scale,
@@ -677,6 +680,7 @@ def _s1_args_fp4(
     bias=None,
     stream=None,
     swiglu_limit=float("inf"),
+    include_stage2_out=False,
 ):
     empty_f32 = torch.empty(0, device=dev, dtype=torch.float32)
     _bias = bias if bias is not None else empty_f32
@@ -701,11 +705,14 @@ def _s1_args_fp4(
         float(swiglu_limit),
         stream,
     )
+    if include_stage2_out:
+        return (args[0], ptr_arg(stage2_out), *args[1:])
     return args
 
 
 def _s1_args_std(
     out,
+    stage2_out,
     a,
     w,
     a_scale,
@@ -719,6 +726,7 @@ def _s1_args_std(
     k_in,
     size_expert_ids_in,
     stream=None,
+    include_stage2_out=False,
 ):
     if stream is None:
         stream = torch.cuda.current_stream()
@@ -738,6 +746,8 @@ def _s1_args_std(
         size_expert_ids_in,
         stream,
     )
+    if include_stage2_out:
+        return (args[0], ptr_arg(stage2_out), *args[1:])
     return args
 
 
@@ -1248,6 +1258,7 @@ def flydsl_moe_stage1(
     xcd_swizzle: int = 0,
     swiglu_limit: Optional[float] = None,
     k_wave: int = 1,
+    zero_out: Optional[torch.Tensor] = None,
 ):
     """Fused gate+up GEMM (MOE stage1).
 
@@ -1371,9 +1382,14 @@ def flydsl_moe_stage1(
     _k_in = model_dim
     _swiglu_limit_val = runtime_swiglu_limit(swiglu_limit, act)
 
+    empty_zero_out = torch.empty(0, dtype=torch.uint8, device=dev)
+    stage2_out = zero_out if zero_out is not None else empty_zero_out
+    zero_stage2_output = zero_out is not None
+
     if use_mx_gemm:
         args = _s1_args_fp4(
             _kernel_out.view(-1),
+            stage2_out.view(-1),
             a.view(-1),
             w1.view(-1),
             flat_a_scale,
@@ -1394,10 +1410,12 @@ def flydsl_moe_stage1(
                 else torch.empty(0, device=dev)
             ),
             swiglu_limit=_swiglu_limit_val,
+            include_stage2_out=(b_dtype != "fp4"),
         )
     else:
         args = _s1_args_std(
             _kernel_out.view(-1),
+            stage2_out.view(-1),
             a.view(-1),
             w1.view(-1),
             flat_a_scale,
@@ -1410,6 +1428,7 @@ def flydsl_moe_stage1(
             _n_in,
             _k_in,
             _grid_y,
+            include_stage2_out=True,
         )
 
     exe = compile_flydsl_moe_stage1(
@@ -1438,6 +1457,7 @@ def flydsl_moe_stage1(
         xcd_swizzle=xcd_swizzle,
         k_wave=k_wave,
         swiglu_limit=_swiglu_limit_val,
+        zero_stage2_output=zero_stage2_output,
     )
     _run_compiled(exe, args)
 
