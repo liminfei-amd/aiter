@@ -29,8 +29,8 @@ import triton
 from packaging.version import Version
 from triton.backends.compiler import GPUTarget
 
-from aiter import dtypes
 from aiter.ops.triton.utils.core import AITER_TRITON_CONFIGS_PATH
+from aiter.ops.triton.utils.types import get_fp8_e4m3_dtype
 from aiter.utility.triton.triton_metadata_redirect import AOTMetadataContext
 
 from aiter.jit.utils.chip_info import get_gfx
@@ -95,7 +95,7 @@ def deepgemm_fp8_paged_mqa_logits_ragged_k(
     )
     # Since triton doesn't have have the reinterpret_cast, we slice the scale out and view it as float
     kv_cache_scale = kv_cache_scale.view(torch.float32)
-    kv_cache_fp8 = kv_cache_fp8.view(dtypes.fp8)
+    kv_cache_fp8 = kv_cache_fp8.view(get_fp8_e4m3_dtype())
 
     config = {
         "ChunkQ": heads,
@@ -144,7 +144,7 @@ def deepgemm_fp8_paged_mqa_logits_stage1_ragged_k(
     )
     # Since triton doesn't have the reinterpret_cast, we slice the scale out and view it as float
     kv_cache_scale = kv_cache_scale.view(torch.float32)
-    kv_cache_fp8 = kv_cache_fp8.view(dtypes.fp8)
+    kv_cache_fp8 = kv_cache_fp8.view(get_fp8_e4m3_dtype())
 
     config = {
         "ChunkQ": 32,
@@ -204,7 +204,7 @@ def deepgemm_fp8_paged_mqa_logits_stage1(
     )
     # Since triton doesn't have the reinterpret_cast, we slice the scale out and view it as float
     kv_cache_scale = kv_cache_scale.view(torch.float32)
-    kv_cache_fp8 = kv_cache_fp8.view(dtypes.fp8)
+    kv_cache_fp8 = kv_cache_fp8.view(get_fp8_e4m3_dtype())
 
     config = {
         "ChunkQ": ChunkQ,
@@ -451,7 +451,7 @@ def deepgemm_fp8_paged_mqa_logits(
         kv_cache[..., : KVBlockSize * hidden_dim],
         kv_cache[..., KVBlockSize * hidden_dim :],
     )
-    kv_cache_fp8 = kv_cache_fp8.view(dtypes.fp8)
+    kv_cache_fp8 = kv_cache_fp8.view(get_fp8_e4m3_dtype())
     kv_cache_scale = kv_cache_scale.view(torch.float32)
 
     VarCtxOpt = VarCtxSchedule is not None
@@ -460,7 +460,8 @@ def deepgemm_fp8_paged_mqa_logits(
     else:
         grid = (batch_size * next_n * SplitKV, 1, 1)
 
-    if enable_gluon_pa_mqa_logits:
+    use_gluon = enable_gluon_pa_mqa_logits and get_gfx() != "gfx1201"
+    if use_gluon:
         is_padded_mode = kv_cache_fp8.stride(0) % 16 == 0
         kernel = _compile_deepgemm_fp8_paged_mqa_logits(
             ChunkQ=heads,
