@@ -139,7 +139,14 @@ def unified_attention_sparse_mla(
         waves_per_eu=2 if use_csr else 1,
     )
 
-    DEFAULT_3D_CFG = dict(num_warps=8, waves_per_eu=2, TILE_SIZE=32, num_stages=2, PRELOAD_V=True)
+    DEFAULT_3D_CFG = dict(
+        num_warps=8, waves_per_eu=2, TILE_SIZE=32, num_stages=2, PRELOAD_V=True
+    )
+    arch = getattr(torch.cuda.get_device_properties(q.device), "gcnArchName", "").split(
+        ":", 1
+    )[0]
+    if arch == "gfx1201":
+        DEFAULT_3D_CFG.update(num_stages=1)
     if num_query_heads <= 8:
         DEFAULT_3D_CFG.update(TILE_SIZE=64, num_stages=1, PRELOAD_V=False)
 

@@ -371,17 +371,15 @@ def test_triton_unified_attn(
     output = torch.empty((*q.shape[:-1], lora_dim), device=q.device, dtype=q.dtype)
 
     unified_attention_sparse_mla(
-        q,
-        blocked_k,
-        output,
-        cu_seqlens_q,
-        max_seqlen_q,
-        seqused_k,
-        max_seqlen_k,
-        softmax_scale,
-        indices_in_kvcache,
-        block_table,
-        lora_dim,
+        q=q,
+        kv=blocked_k,
+        out=output,
+        cu_seqlens_q=cu_seqlens_q,
+        max_seqlen_q=max_seqlen_q,
+        seqused_k=seqused_k,
+        softmax_scale=softmax_scale,
+        topk_indices=indices_in_kvcache,
+        kv_lora_rank=lora_dim,
     )
 
     ref_output = ref_output.to(output.device).to(q.dtype)
@@ -487,17 +485,15 @@ def test_triton_unified_attn_csr_fp8(
     )
 
     unified_attention_sparse_mla(
-        q_bf16,
-        blocked_kv_fp8,
-        output,
-        cu_seqlens_q,
-        max_seqlen_q,
-        seqused_k,
-        max_seqlen_k,
-        softmax_scale,
-        None,
-        block_table_d,
-        lora_dim,
+        q=q_bf16,
+        kv=blocked_kv_fp8,
+        out=output,
+        cu_seqlens_q=cu_seqlens_q,
+        max_seqlen_q=max_seqlen_q,
+        seqused_k=seqused_k,
+        softmax_scale=softmax_scale,
+        topk_indices=None,
+        kv_lora_rank=lora_dim,
         kv_indptr=kv_indptr,
         kv_indices=kv_indices,
         max_sparse_len=max_sparse_len,
@@ -515,7 +511,7 @@ def test_triton_unified_attn_csr_fp8(
 
 
 @pytest.mark.parametrize("s_q", [1, 17])
-@pytest.mark.parametrize("s_k", [1, 64])
+@pytest.mark.parametrize("s_k", [1, 64, 2048])
 @pytest.mark.parametrize("num_q_heads", [8, 16, 32])
 @pytest.mark.parametrize("lora_dim", [256, 512])
 @pytest.mark.parametrize("block_size", [16, 64])
@@ -588,17 +584,15 @@ def test_triton_unified_attn_csr(
     output = torch.empty((*q.shape[:-1], lora_dim), device=q.device, dtype=q.dtype)
 
     unified_attention_sparse_mla(
-        q,
-        blocked_k,
-        output,
-        cu_seqlens_q,
-        max_seqlen_q,
-        seqused_k,
-        max_seqlen_k,
-        softmax_scale,
-        None,
-        block_table,
-        lora_dim,
+        q=q,
+        kv=blocked_k,
+        out=output,
+        cu_seqlens_q=cu_seqlens_q,
+        max_seqlen_q=max_seqlen_q,
+        seqused_k=seqused_k,
+        softmax_scale=softmax_scale,
+        topk_indices=None,
+        kv_lora_rank=lora_dim,
         kv_indptr=kv_indptr,
         kv_indices=kv_indices,
         max_sparse_len=max_sparse_len,
